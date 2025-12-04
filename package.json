@@ -1,16 +1,47 @@
 {
-  "name": "express",
+  "name": "vishapp",
   "version": "1.0.0",
-  "description": "",
-  "type": "module",
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@types/express": "^5.0.0",
-    "express": "^4.18.2"
+  "description": "advance whatsapp ",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon src/index.js --ignore auth_sessions --ignore node_modules",
+    "format": "prettier --write \"src/**/*.js\""
+
   },
-  "devDependencies": {
-    "@types/node": "^22.0.0"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vishaljinode/vishapp.git"
+  },
+  "keywords": [
+    "whatsapp",
+    "whatsapp-automation",
+    "whatsapp-scheduler"
+  ],
+  "author": "Vishapp",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/vishaljinode/vishapp/issues"
+  },
+  "homepage": "https://github.com/vishaljinode/vishapp#readme",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.20",
+    "baileys-vishal2": "^7.0.0-rc.5",
+    "bcrypt": "^6.0.0",
+    "body-parser": "^2.2.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mime-types": "^3.0.1",
+    "mongoose": "^8.19.1",
+    "node-cron": "^4.2.1",
+    "nodemon": "^3.1.10",
+    "pino": "^10.0.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
   }
 }
