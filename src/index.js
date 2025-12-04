@@ -61,7 +61,7 @@ io.on("connection", (socket) => {
 
 initSocket(io);
 
-mongoose.connect(process.env.MONGO_URI || "mongodb://127.0.0.1:27017/js_bol")
+mongoose.connect(process.env.MONGO_URI || "mongodb+srv://paras:CZMazeyPcLZTBjd2@atlascluster.qnoiucs.mongodb.net/test?retryWrites=true&w=majority")
     .then(() => {
         console.log('MongoDB connected')
         // Start server
