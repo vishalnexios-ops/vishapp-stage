@@ -12,7 +12,7 @@ const { initSocket, sendScheduleMessage } = require('./Controllers/sessionContro
 const { sendResponse } = require('./Utils/responseUtils');
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 8001;
 
 
 
