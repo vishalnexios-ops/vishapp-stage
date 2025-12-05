@@ -50,7 +50,7 @@ cron.schedule("* * * * *", async () => {
     await sendScheduleMessage();
 });
 
-🔹 Socket.io connection
+ // Socket.io connection
 io.on("connection", (socket) => {
     console.log("⚡ Frontend connected via Socket.io:", socket.id);
 
