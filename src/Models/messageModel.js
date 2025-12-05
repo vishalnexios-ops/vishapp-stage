@@ -19,6 +19,7 @@ const messageSchema = new mongoose.Schema({
     schedulled: { type: Boolean, default: false },
     scheduledTime: { type: Date },
     scheduledStatus: { type: String, enum: ['pending','sent','scheduledSent'], default: 'sent' },
+    sentAt:{ type: Date}
 }, { timestamps: true });
 
 
