@@ -51,13 +51,13 @@ app.use('/health', (req, res) => {
 // });
 
 // 🔹 Socket.io connection
-io.on("connection", (socket) => {
-    console.log("⚡ Frontend connected via Socket.io:", socket.id);
+// io.on("connection", (socket) => {
+//     console.log("⚡ Frontend connected via Socket.io:", socket.id);
 
-    socket.on("disconnect", () => {
-        console.log("Frontend disconnected:", socket.id);
-    });
-});
+//     socket.on("disconnect", () => {
+//         console.log("Frontend disconnected:", socket.id);
+//     });
+// });
 
 // initSocket(io);
 
