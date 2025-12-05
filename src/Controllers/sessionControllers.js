@@ -15,7 +15,6 @@ const mime = require("mime-types"); // install: npm install mime-types
 const { sendResponse, sendError } = require('../Utils/responseUtils');
 const { validateSession } = require('../Utils/sessionValidator');
 
-
 const sessionModel = require('../Models/loginModel');
 const messageModel = require('../Models/messageModel');
 const contactModel = require('../Models/contactModel');
@@ -33,6 +32,18 @@ let userId = null;
 
 if (!fs.existsSync(SESSIONS_PATH)) fs.mkdirSync(SESSIONS_PATH);
 
+// Enhance: Persist userId mapping for sessionId (for restoring correctly after restart)
+const SESSION_USER_FILE = "./auth_sessions/_session_users.json";
+let sessionUserMap = {};
+try {
+    if (fs.existsSync(SESSION_USER_FILE)) {
+        sessionUserMap = JSON.parse(fs.readFileSync(SESSION_USER_FILE, "utf8"));
+    }
+} catch (e) {
+    sessionUserMap = {};
+}
+const saveSessionUserMap = () => fs.writeFileSync(SESSION_USER_FILE, JSON.stringify(sessionUserMap, null, 2));
+
 const initSocket = (io) => {
     ioInstance = io;
 };
@@ -40,13 +51,17 @@ const initSocket = (io) => {
 // Restore sessions after server restart
 async function restoreSessions() {
     const sessionDirs = fs.readdirSync(SESSIONS_PATH);
-    for (const dir of sessionDirs) {
+    // Only restore folders (not our mapping file)
+    for (const dir of sessionDirs.filter(x => !x.startsWith('_'))) {
         const sessionPath = path.join(SESSIONS_PATH, dir);
         const stats = fs.statSync(sessionPath);
         if (stats.isDirectory()) {
             console.log(`♻️ Restoring session: ${dir}`);
+
+            // Set userId from our mapping (if present for reconnect DB save)
+            const restoredUserId = sessionUserMap[dir] || null;
             try {
-                await startSession(dir, null); // No QR, just reconnect
+                await startSession(dir, null, restoredUserId); // No QR, just reconnect
             } catch (err) {
                 console.error(`❌ Failed to restore session ${dir}:`, err.message);
             }
@@ -55,8 +70,7 @@ async function restoreSessions() {
 }
 
 // Start a WhatsApp session
-async function startSession(sessionId, res = null) {
-
+async function startSession(sessionId, res = null, restoredUserId = null) {
     const sessionPath = path.join(SESSIONS_PATH, sessionId);
 
     if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath);
@@ -80,7 +94,7 @@ async function startSession(sessionId, res = null) {
 
         if (qr && !qrCodeSent && res) {
             qrCodeSent = true;
-            const qrGeneratedAt = new Date(); //  Timestamp
+            const qrGeneratedAt = new Date();
             console.log(`📱 [${sessionId}] Scan this QR below 👇`);
             qrcodeTerminal.generate(qr, { small: true });
 
@@ -109,7 +123,7 @@ async function startSession(sessionId, res = null) {
             } else {
                 sendResponse(res, 200, "Scan this QR code to log in", {
                     sessionId,
-                    qrGeneratedAt, //  Send timestamp in API response
+                    qrGeneratedAt,
                     qr: qrImageUrl,
                 });
             }
@@ -126,15 +140,33 @@ async function startSession(sessionId, res = null) {
             console.log(` [${sessionId}] Connected successfully!`);
             sessions.set(sessionId, sock);
 
-            if (userId) {
-                const newSession = new sessionModel({
-                    userId,
-                    sessionId,
-                    mobile: sock.user.id.split(":")[0],
-                    isLoggedIn: true,
-                    loginTime: new Date(),
-                });
-                await newSession.save();
+            // Persist userId for this session (so even after restart, we can update DB correctly)
+            const currentUserId = userId || restoredUserId || null;
+            if (currentUserId) {
+                // Save mapping to persistent file
+                sessionUserMap[sessionId] = currentUserId;
+                saveSessionUserMap();
+
+                // Find if already exists in db and is not logged in, update or create
+                let found = await sessionModel.findOne({ sessionId });
+                if (found) {
+                    if (!found.isLoggedIn) {
+                        found.isLoggedIn = true;
+                        found.loginTime = new Date();
+                        found.mobile = sock.user.id.split(":")[0];
+                        found.logoutTime = undefined;
+                        await found.save();
+                    }
+                } else {
+                    const newSession = new sessionModel({
+                        userId: currentUserId,
+                        sessionId,
+                        mobile: sock.user.id.split(":")[0],
+                        isLoggedIn: true,
+                        loginTime: new Date(),
+                    });
+                    await newSession.save();
+                }
             }
             // Notify frontend via Socket.io
             if (ioInstance) {
@@ -147,17 +179,27 @@ async function startSession(sessionId, res = null) {
             const reason = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.message;
             console.log(`⚠️ [${sessionId}] Connection closed: ${reason}`);
 
+            // Only remove session if true logout
             if (reason === DisconnectReason.loggedOut || reason === "Connection Closed" || reason === 408 || reason === 428) {
                 console.log(`❌ [${sessionId}] Logged out. Removing session...`);
+                const currentUserId = userId || restoredUserId || sessionUserMap[sessionId] || null;
+                // Mark DB session as logged out
                 await sessionModel.findOneAndUpdate({ sessionId }, { isLoggedIn: false, logoutTime: new Date() });
-                fs.rmSync(sessionPath, { recursive: true, force: true });
+                try {
+                    // Remove session files/folder
+                    fs.rmSync(sessionPath, { recursive: true, force: true });
+                } catch (e) { }
                 sessions.delete(sessionId);
+                // Remove user mapping
+                delete sessionUserMap[sessionId];
+                saveSessionUserMap();
+
                 if (ioInstance) {
                     ioInstance.emit("whatsapp-logout", { sessionId });
                 }
             } else {
                 console.log(` [${sessionId}] Reconnecting in 5 seconds...`);
-                setTimeout(() => startSession(sessionId), 5000);
+                setTimeout(() => startSession(sessionId, null, restoredUserId || sessionUserMap[sessionId]), 5000);
             }
         }
     });
@@ -202,9 +244,12 @@ async function startSession(sessionId, res = null) {
             }
         }
 
+        // Pick userId for DB from mapping (for incoming restored sessions)
+        const dbUserId = isFromMe ? (userId || restoredUserId || sessionUserMap[sessionId] || null) : null;
+
         if (content) {
             const newMessage = new messageModel({
-                sender: isFromMe ? userId : null,
+                sender: dbUserId,
                 senderMobile: isFromMe ? userMobile : contactMobile,
                 receiverMobile: isFromMe ? contactMobile : userMobile,
                 content: content || mediaUrl,
@@ -224,12 +269,12 @@ async function startSession(sessionId, res = null) {
 
 //  Create new session (for QR login)
 const createSession = async (req, res) => {
-
     userId = req.user.userId;
-
     const sessionId = `session_${Date.now()}_${userId}`;
+    sessionUserMap[sessionId] = userId;
+    saveSessionUserMap();
     try {
-        await startSession(sessionId, res);
+        await startSession(sessionId, res, userId);
     } catch (err) {
         console.error("❌ Error creating session:", err);
         return sendError(res, 500, err.message);
@@ -327,6 +372,16 @@ const logoutSession = async (req, res) => {
             { isLoggedIn: false, logoutTime: new Date() }
         );
 
+        // Remove this session from user mapping and file
+        delete sessionUserMap[sessionId];
+        saveSessionUserMap();
+
+        // Remove session files/folders for this session
+        const sessionPath = path.join(SESSIONS_PATH, sessionId);
+        try {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+        } catch (e) { }
+
         // Notify frontend via Socket.io
         if (ioInstance) {
             ioInstance.emit("whatsapp-logout", { sessionId });
@@ -376,7 +431,16 @@ const getAllMessages = async (req, res) => {
 
 const sendToMultiple = async (req, res) => {
     userId = req.user.userId;
-    const { numbers, message, mediaUrl, caption, sessionId, delayTime = 3000 } = req.body;
+    const {
+        numbers,
+        message,
+        mediaUrl,
+        caption,
+        sessionId,
+        delayTime = 3000,
+        schedule = false,
+        scheduledTime
+    } = req.body;
 
     if (!validateSession(res, sessionId, userId)) return;
     const sock = sessions.get(sessionId);
@@ -384,49 +448,144 @@ const sendToMultiple = async (req, res) => {
     if (!sock) return sendError(res, 500, "Socket not ready");
 
     const toNumbers = Array.isArray(numbers) ? numbers : [numbers];
-    //  Daily limit check
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const messagesSentToday = await messageModel.countDocuments({
-        sessionId,
-        direction: "outgoing",
-        createdAt: { $gte: startOfDay, $lte: endOfDay },
-    });
-
-    const DAILY_LIMIT = process.env.DAILY_LIMIT || 500; // safe daily limit per session
-
-    if (messagesSentToday >= DAILY_LIMIT) {
-        return sendError(res, 400, `Daily limit reached (${DAILY_LIMIT} messages). Try again tomorrow.`);
-    }
-
-    // Calculate how many can be sent
-    const allowedToSend = Math.min(toNumbers.length, DAILY_LIMIT - messagesSentToday);
 
 
-    for (let i = 0; i < allowedToSend; i++) {
-        const number = toNumbers[i];
-        const to = number.includes("@s.whatsapp.net") ? number : `${number}@s.whatsapp.net`;
-        try {
-            if (mediaUrl) {
-                const isImage = /\.(jpg|jpeg|png|gif)$/i.test(mediaUrl);
-                await sock.sendMessage(to, {
-                    [isImage ? "image" : "video"]: { url: mediaUrl },
-                    caption: caption || message || (isImage ? "📸 Image" : "🎥 Video"),
-                });
-            } else if (message) {
-                await sock.sendMessage(to, { text: message });
+
+    // Check for scheduled sending
+    if (
+        schedule === true &&
+        scheduledTime &&
+        new Date(scheduledTime).getTime() > Date.now()
+    ) {
+        // Get current user mobile for DB save
+        const userMobile = sock.user?.id.split(":")[0] || "";
+
+        // 🔍 Detect contentType automatically from mediaUrl
+        let contentType = "text";
+        if (mediaUrl) {
+            // Extract MIME type using extension
+            const ext = path.extname(mediaUrl).toLowerCase();
+            const mimeType = mime.lookup(ext);
+            if (mimeType) {
+                if (mimeType.startsWith("image/")) contentType = "image";
+                else if (mimeType.startsWith("video/")) contentType = "video";
+                else if (mimeType.startsWith("audio/")) contentType = "audio";
+                else if (mimeType.startsWith("application/pdf")) contentType = "document";
+                else contentType = "file";
+            } else {
+                contentType = "file";
             }
-            console.log(` Sent to ${number}`);
-            await new Promise(resolve => setTimeout(resolve, delayTime)); // 2 sec delay
-        } catch (err) {
-            console.error(`❌ Failed to send to ${number}:`, err.message);
         }
-    }
 
-    sendResponse(res, 200, ` Message sent to ${toNumbers.length} numbers (with safe delay)`);
+        // Schedule messages for each number
+        try {
+            for (let i = 0; i < toNumbers.length; i++) {
+                const number = toNumbers[i];
+                const receiverMobile = number;
+                const newMessage = new messageModel({
+                    sender: userId,
+                    senderMobile: userMobile,
+                    receiverMobile: receiverMobile,
+                    content: caption || message || "",
+                    contentType,
+                    mediaUrl,
+                    sessionId,
+                    schedulled: true,
+                    scheduledTime: new Date(scheduledTime),
+                    scheduledStatus: "pending",
+                    direction: "outgoing",
+                });
+                await newMessage.save();
+            }
+            return sendResponse(res, 200, `Message scheduled successfully for ${toNumbers} number(s).`);
+        } catch (err) {
+            console.error("❌ Error scheduling message(s):", err);
+            return sendError(res, 500, "Error scheduling messages", err);
+        }
+    } else {
+        // Send immediately as before
+
+        // Get current user mobile for DB save
+        const userMobile = sock.user?.id.split(":")[0] || "";
+
+        // 🔍 Detect contentType automatically from mediaUrl
+        let contentType = "text";
+        if (mediaUrl) {
+            // Extract MIME type using extension
+            const ext = path.extname(mediaUrl).toLowerCase();
+            const mimeType = mime.lookup(ext);
+            if (mimeType) {
+                if (mimeType.startsWith("image/")) contentType = "image";
+                else if (mimeType.startsWith("video/")) contentType = "video";
+                else if (mimeType.startsWith("audio/")) contentType = "audio";
+                else if (mimeType.startsWith("application/pdf")) contentType = "document";
+                else contentType = "file";
+            } else {
+                contentType = "file";
+            }
+        }
+
+        //  Daily limit check
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const messagesSentToday = await messageModel.countDocuments({
+            sessionId,
+            direction: "outgoing",
+            createdAt: { $gte: startOfDay, $lte: endOfDay },
+        });
+
+        const DAILY_LIMIT = process.env.DAILY_LIMIT || 500; // safe daily limit per session
+
+        if (messagesSentToday >= DAILY_LIMIT) {
+            return sendError(res, 400, `Daily limit reached (${DAILY_LIMIT} messages). Try again tomorrow.`);
+        }
+
+        // Calculate how many can be sent
+        const allowedToSend = Math.min(toNumbers.length, DAILY_LIMIT - messagesSentToday);
+
+        let successCount = 0;
+        for (let i = 0; i < allowedToSend; i++) {
+            const number = toNumbers[i];
+            const receiverMobile = number;
+            const to = number.includes("@s.whatsapp.net") ? number : `${number}@s.whatsapp.net`;
+            try {
+                if (mediaUrl) {
+                    const isImage = /\.(jpg|jpeg|png|gif)$/i.test(mediaUrl);
+                    await sock.sendMessage(to, {
+                        [isImage ? "image" : "video"]: { url: mediaUrl },
+                        caption: caption || message || (isImage ? "📸 Image" : "🎥 Video"),
+                    });
+                } else if (message) {
+                    await sock.sendMessage(to, { text: message });
+                }
+                
+                // Save message to database immediately after successful send
+                const newMessage = new messageModel({
+                    sender: userId,
+                    senderMobile: userMobile,
+                    receiverMobile: receiverMobile,
+                    content: caption || message || "",
+                    contentType,
+                    mediaUrl,
+                    sessionId,
+                    schedulled: false,
+                    scheduledStatus: "sent",
+                    direction: "outgoing",
+                });
+                await newMessage.save();
+                
+                successCount++;
+                console.log(`Sent to ${number}`);
+                await new Promise(resolve => setTimeout(resolve, delayTime));
+            } catch (err) {
+                console.error(`❌ Failed to send to ${number}:`, err.message);
+            }
+        }
+        return sendResponse(res, 200, `Message sent to ${successCount} number(s) (with safe delay)`);
+    }
 };
 
 const scheduleMessage = async (req, res) => {
@@ -456,7 +615,7 @@ const scheduleMessage = async (req, res) => {
                 else if (mimeType.startsWith("video/")) contentType = "video";
                 else if (mimeType.startsWith("audio/")) contentType = "audio";
                 else if (mimeType.startsWith("application/pdf")) contentType = "document";
-                else contentType = "file"; // default for other media types
+                else contentType = "file";
             } else {
                 contentType = "file";
             }
@@ -486,7 +645,6 @@ const scheduleMessage = async (req, res) => {
         sendError(res, 500, err.message);
     }
 };
-
 
 const getScheduleMessage = async (req, res) => {
     try {
@@ -521,7 +679,7 @@ const sendScheduleMessage = async () => {
                     scheduledStatus: "failed",
                     schedulled: false,
                 });
-                continue; // move to next message
+                continue;
             }
 
             const jid = msg.receiverMobile.includes("@s.whatsapp.net")
