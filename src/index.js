@@ -45,7 +45,7 @@ app.use('/health', (req, res) => {
 });
 
 
-Run every minute
+// Run every minute
 cron.schedule("* * * * *", async () => {
     await sendScheduleMessage();
 });
