@@ -25,12 +25,12 @@ app.use(cors({
 app.use(express.static('public'));
 app.use(cookieParser());
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
-});
+// const io = new Server(server, {
+//     cors: {
+//         origin: "*",
+//         methods: ["GET", "POST"]
+//     }
+// });
 
 // Routes
 const userRoutes = require('./Routes/userRoutes');
@@ -46,9 +46,9 @@ app.use('/health', (req, res) => {
 
 
 // Run every minute
-cron.schedule("* * * * *", async () => {
-    await sendScheduleMessage();
-});
+// cron.schedule("* * * * *", async () => {
+//     await sendScheduleMessage();
+// });
 
 // 🔹 Socket.io connection
 io.on("connection", (socket) => {
@@ -59,15 +59,15 @@ io.on("connection", (socket) => {
     });
 });
 
-initSocket(io);
+// initSocket(io);
 
 mongoose.connect(process.env.MONGO_URI || "mongodb+srv://paras:CZMazeyPcLZTBjd2@atlascluster.qnoiucs.mongodb.net/test?retryWrites=true&w=majority")
     .then(() => {
         console.log('MongoDB connected')
         // Start server
-        server.listen(port, () => {
-            console.log(`Server running on http://localhost:${port}`);
-        });
+        // server.listen(port, () => {
+        //     console.log(`Server running on http://localhost:${port}`);
+        // });
     })
     .catch(err => console.log(err));
 
