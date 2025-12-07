@@ -63,12 +63,40 @@ async function restoreSessions() {
     const mappedUserId = sessionUserMap[dir] || null;
 
     try {
-      await startSession(dir, null, mappedUserId);
+      const sock = await startSession(dir, null, mappedUserId);
+
+      // ⛔ If session did NOT restore correctly
+      if (!sock || !sock.user || !sock.user.id) {
+        console.log(`🗑 Removing invalid session: ${dir}`);
+
+        // Delete session folder
+        try { fs.rmSync(full, { recursive: true, force: true }); } catch {}
+
+        // Remove from memory map
+        delete sessionUserMap[dir];
+        saveSessionUserMap();
+
+        // Remove from sessions cache
+        sessions.delete(dir);
+
+        continue;
+      }
+
+      console.log(`✅ Session restored successfully: ${dir}`);
     } catch (err) {
       console.error("❌ Restore failed:", dir, err.message);
+
+      console.log(`🗑 Cleaning broken session folder: ${dir}`);
+      try { fs.rmSync(full, { recursive: true, force: true }); } catch {}
+
+      delete sessionUserMap[dir];
+      saveSessionUserMap();
+
+      sessions.delete(dir);
     }
   }
 }
+
 
 // Start a WhatsApp session
 async function startSession(sessionId, res = null, restoredUserId = null) {
@@ -100,13 +128,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
     });
 
     sessions.set(sessionId, sock);
-
-    // 🔄 Safe periodic keep alive
-    setInterval(() => {
-      try {
-        sock.sendPresenceUpdate("available");
-      } catch {}
-    }, 20_000);
+    sock._presenceInterval = null;
 
     // 🧿 Safe save creds
     sock.ev.on("creds.update", async () => {
@@ -124,36 +146,36 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
       // 📌 Show QR
       if (qr && !qrSent && res) {
-        qrCodeSent = true;
+        qrSent = true; // ✅ yahi use karna hai, qrCodeSent nahi
         const qrGeneratedAt = new Date();
         console.log(`📱 [${sessionId}] Scan this QR below 👇`);
         qrcodeTerminal.generate(qr, { small: true });
 
         const qrImageUrl = await qrcode.toDataURL(qr);
-        const acceptHeader = res.req.headers.accept || "";
+        const acceptHeader = res?.req?.headers?.accept || "";
+
         if (acceptHeader.includes("text/html")) {
           res.send(`
-                    <html>
-                      <head>
-                        <title>WhatsApp QR - ${sessionId}</title>
-                        <style>
-                          body { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#f4f4f4; font-family:sans-serif; }
-                          img { border:5px solid #25D366; border-radius:12px; box-shadow:0 0 20px rgba(0,0,0,0.1); }
-                          h2 { color:#333; }
-                        </style>
-                      </head>
-                      <body>
-                        <h2>📲 Scan this QR to link WhatsApp</h2>
-                        <img src="${qrImageUrl}" alt="WhatsApp QR" />
-                        <p>Session ID: <b>${sessionId}</b></p>
-                        <p>QR Generated At: <b>${qrGeneratedAt.toLocaleTimeString()}</b></p>
-                      </body>
-                    </html>
-                `);
+            <html>
+              <head>
+                <title>WhatsApp QR - ${sessionId}</title>
+                <style>
+                  body { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#f4f4f4; font-family:sans-serif; }
+                  img { border:5px solid #25D366; border-radius:12px; box-shadow:0 0 20px rgba(0,0,0,0.1); }
+                  h2 { color:#333; }
+                </style>
+              </head>
+              <body>
+                <h2>📲 Scan this QR to link WhatsApp</h2>
+                <img src="${qrImageUrl}" alt="WhatsApp QR" />
+                <p>Session ID: <b>${sessionId}</b></p>
+                <p>QR Generated At: <b>${qrGeneratedAt.toLocaleTimeString()}</b></p>
+              </body>
+            </html>
+          `);
         } else {
-          qrSent = true;
-          const qrImage = await qrcode.toDataURL(qr);
-          sendResponse(res, 200, "Scan QR", { sessionId, qr: qrImage });
+          // JSON response
+          sendResponse(res, 200, "Scan QR", { sessionId, qr: qrImageUrl });
         }
       }
 
@@ -161,8 +183,61 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
       if (connection === "open") {
         console.log(`🟢 [${sessionId}] Connected`);
 
+        // GET MOBILE NUMBER FROM WHATSAPP
+        const loggedInMobile = sock.user.id.split(":")[0]; // ex: 919876543210
+
+        // 🚫 CHECK IF THIS NUMBER IS ALREADY LOGGED IN ANOTHER SESSION
+        let alreadySession = null;
+        for (const [sid, s] of sessions.entries()) {
+          if (sid === sessionId) continue;
+          const mobile = s?.user?.id?.split(":")[0];
+          if (mobile && mobile === loggedInMobile) {
+            alreadySession = sid;
+            break;
+          }
+        }
+
+        if (alreadySession) {
+          console.log(
+            `❌ SAME NUMBER ALREADY LOGGED IN (${loggedInMobile}) in session:`,
+            alreadySession
+          );
+
+          // Close new session
+          try {
+            await sock.logout();
+          } catch {}
+
+          sessions.delete(sessionId);
+          delete sessionUserMap[sessionId];
+          saveSessionUserMap();
+
+          // Agar res mila hoga (QR login se aaya) to error bhej do, warna sirf log
+          if (res) {
+            return sendError(
+              res,
+              400,
+              `This number (${loggedInMobile}) is already logged in another session.`
+            );
+          } else {
+            return;
+          }
+        }
+
+        // Start safe presence update ONLY after WhatsApp login
+        if (!sock._presenceInterval) {
+          sock._presenceInterval = setInterval(() => {
+            try {
+              if (sock.user) sock.sendPresenceUpdate("available");
+            } catch (e) {
+              console.log("Presence update error:", e.message);
+            }
+          }, 20000);
+        }
+
         const uid =
           userId || restoredUserId || sessionUserMap[sessionId] || null;
+
         if (uid) {
           sessionUserMap[sessionId] = uid;
           saveSessionUserMap();
@@ -174,7 +249,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
           {
             sessionId,
             userId: uid,
-            mobile: sock.user.id.split(":")[0],
+            mobile: loggedInMobile,
             isLoggedIn: true,
             loginTime: new Date(),
           },
@@ -184,7 +259,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
         if (ioInstance)
           ioInstance.emit("whatsapp-login-success", {
             sessionId,
-            mobile: sock.user.id.split(":")[0],
+            mobile: loggedInMobile,
           });
       }
 
@@ -194,15 +269,23 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
         console.log(`⚠️ [${sessionId}] Disconnected:`, status);
 
+        // 🌟 stop presence interval
+        if (sock._presenceInterval) {
+          clearInterval(sock._presenceInterval);
+          sock._presenceInterval = null;
+        }
+
         // ❗ LOGGED OUT ONLY HERE
         if (status === DisconnectReason.loggedOut) {
           console.log("❌ Logged out → deleting session");
           try {
             fs.rmSync(sessionPath, { recursive: true, force: true });
           } catch {}
+
           sessions.delete(sessionId);
           delete sessionUserMap[sessionId];
           saveSessionUserMap();
+
           await sessionModel.findOneAndUpdate(
             { sessionId },
             { isLoggedIn: false, logoutTime: new Date() }
@@ -233,18 +316,6 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 }
 
 //  Create new session (for QR login)
-// const createSession = async (req, res) => {
-//   userId = req.user.userId;
-//   const sessionId = `session_${Date.now()}_${userId}`;
-//   sessionUserMap[sessionId] = userId;
-//   saveSessionUserMap();
-//   try {
-//     await startSession(sessionId, res, userId);
-//   } catch (err) {
-//     console.error("❌ Error creating session:", err);
-//     return sendError(res, 500, err.message);
-//   }
-// };
 const createSession = async (req, res) => {
   userId = req.user.userId;
   const sessionId = `session_${Date.now()}_${userId}`;
