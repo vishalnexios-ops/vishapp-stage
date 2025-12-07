@@ -26,7 +26,7 @@ let ioInstance = null; // Socket.io instance
 dotenv.config();
 
 const sessions = new Map();
-const sessionLoading = new Set(); 
+const sessionLoading = new Set();
 const SESSIONS_PATH = "./auth_sessions";
 
 let userId = null;
@@ -52,24 +52,23 @@ const initSocket = (io) => {
 
 // Restore sessions after server restart
 async function restoreSessions() {
-    const dirs = fs.readdirSync(SESSIONS_PATH);
+  const dirs = fs.readdirSync(SESSIONS_PATH);
 
-    for (const dir of dirs.filter(x => !x.startsWith("_"))) {
-        const full = path.join(SESSIONS_PATH, dir);
-        if (!fs.statSync(full).isDirectory()) continue;
+  for (const dir of dirs.filter((x) => !x.startsWith("_"))) {
+    const full = path.join(SESSIONS_PATH, dir);
+    if (!fs.statSync(full).isDirectory()) continue;
 
-        console.log("♻ Restoring session:", dir);
+    console.log("♻ Restoring session:", dir);
 
-        const mappedUserId = sessionUserMap[dir] || null;
+    const mappedUserId = sessionUserMap[dir] || null;
 
-        try {
-            await startSession(dir, null, mappedUserId);
-        } catch (err) {
-            console.error("❌ Restore failed:", dir, err.message);
-        }
+    try {
+      await startSession(dir, null, mappedUserId);
+    } catch (err) {
+      console.error("❌ Restore failed:", dir, err.message);
     }
+  }
 }
-
 
 // Start a WhatsApp session
 async function startSession(sessionId, res = null, restoredUserId = null) {
@@ -125,6 +124,13 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
       // 📌 Show QR
       if (qr && !qrSent && res) {
+        qrCodeSent = true;
+        const qrGeneratedAt = new Date();
+        console.log(`📱 [${sessionId}] Scan this QR below 👇`);
+        qrcodeTerminal.generate(qr, { small: true });
+
+        const qrImageUrl = await qrcode.toDataURL(qr);
+        const acceptHeader = res.req.headers.accept || "";
         if (acceptHeader.includes("text/html")) {
           res.send(`
                     <html>
@@ -240,20 +246,19 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 //   }
 // };
 const createSession = async (req, res) => {
-    userId = req.user.userId;
-    const sessionId = `session_${Date.now()}_${userId}`;
+  userId = req.user.userId;
+  const sessionId = `session_${Date.now()}_${userId}`;
 
-    sessionUserMap[sessionId] = userId;
-    saveSessionUserMap();
+  sessionUserMap[sessionId] = userId;
+  saveSessionUserMap();
 
-    try {
-        await startSession(sessionId, res, userId);
-    } catch (err) {
-        console.error("❌ Error creating session:", err);
-        return sendError(res, 500, err.message);
-    }
+  try {
+    await startSession(sessionId, res, userId);
+  } catch (err) {
+    console.error("❌ Error creating session:", err);
+    return sendError(res, 500, err.message);
+  }
 };
-
 
 //  Send text message
 const sendMessage = async (req, res) => {
@@ -744,7 +749,7 @@ const sendScheduleMessage = async () => {
       await messageModel.findByIdAndUpdate(msg._id, {
         schedulled: false,
         scheduledStatus: "scheduledSent",
-        sentAt: new Date()
+        sentAt: new Date(),
       });
 
       console.log(` Message sent to ${msg.receiverMobile}`);
