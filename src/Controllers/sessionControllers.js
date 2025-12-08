@@ -99,12 +99,12 @@ async function restoreSessions() {
 
 // Start a WhatsApp session
 async function startSession(sessionId, res = null, restoredUserId = null) {
-  if (sessionLoading.has(sessionId)) {
-    console.log("⚠ Session already initializing:", sessionId);
-    return;
-  }
+  // if (sessionLoading.has(sessionId)) {
+  //   console.log("⚠ Session already initializing:", sessionId);
+  //   return;
+  // }
 
-  sessionLoading.add(sessionId);
+  // sessionLoading.add(sessionId);
 
   const sessionPath = path.join(SESSIONS_PATH, sessionId);
 
@@ -126,7 +126,6 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
       syncFullHistory: false,
     });
 
-    sessions.set(sessionId, sock);
     sock._presenceInterval = null;
 
     // 🧿 Safe save creds
@@ -145,7 +144,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
       // 📌 Show QR
       if (qr && !qrSent && res) {
-        qrSent = true; // ✅ yahi use karna hai, qrCodeSent nahi
+        qrSent = true;
         const qrGeneratedAt = new Date();
         console.log(`📱 [${sessionId}] Scan this QR below 👇`);
         qrcodeTerminal.generate(qr, { small: true });
@@ -180,7 +179,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
       // 🟢 Connected
       if (connection === "open") {
-        console.log(`🟢 [${sessionId}] Connected`);
+        console.log(`🟢 [${sessionId}] Connected`)
         // if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath);
 
         // GET MOBILE NUMBER FROM WHATSAPP
@@ -240,7 +239,8 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
         if (uid) {
           sessionUserMap[sessionId] = uid;
-          saveSessionUserMap();
+          saveSessionUserMap();          ;
+        sessions.set(sessionId, sock);
         }
 
         // Mark in DB
@@ -284,7 +284,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
           sessions.delete(sessionId);
           delete sessionUserMap[sessionId];
-          saveSessionUserMap();
+          // saveSessionUserMap();
 
           await sessionModel.findOneAndUpdate(
             { sessionId },
