@@ -43,8 +43,7 @@ try {
 } catch (e) {
   sessionUserMap = {};
 }
-const saveSessionUserMap = () =>
-  fs.writeFileSync(SESSION_USER_FILE, JSON.stringify(sessionUserMap, null, 2));
+const saveSessionUserMap = () => fs.writeFileSync(SESSION_USER_FILE, JSON.stringify(sessionUserMap, null, 2));
 
 const initSocket = (io) => {
   ioInstance = io;
@@ -70,7 +69,7 @@ async function restoreSessions() {
         console.log(`🗑 Removing invalid session: ${dir}`);
 
         // Delete session folder
-        try { fs.rmSync(full, { recursive: true, force: true }); } catch {}
+        try { fs.rmSync(full, { recursive: true, force: true }); } catch { }
 
         // Remove from memory map
         delete sessionUserMap[dir];
@@ -87,7 +86,7 @@ async function restoreSessions() {
       console.error("❌ Restore failed:", dir, err.message);
 
       console.log(`🗑 Cleaning broken session folder: ${dir}`);
-      try { fs.rmSync(full, { recursive: true, force: true }); } catch {}
+      try { fs.rmSync(full, { recursive: true, force: true }); } catch { }
 
       delete sessionUserMap[dir];
       saveSessionUserMap();
@@ -108,7 +107,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
   sessionLoading.add(sessionId);
 
   const sessionPath = path.join(SESSIONS_PATH, sessionId);
-  if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath);
+
 
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
@@ -182,6 +181,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
       // 🟢 Connected
       if (connection === "open") {
         console.log(`🟢 [${sessionId}] Connected`);
+        // if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath);
 
         // GET MOBILE NUMBER FROM WHATSAPP
         const loggedInMobile = sock.user.id.split(":")[0]; // ex: 919876543210
@@ -206,7 +206,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
           // Close new session
           try {
             await sock.logout();
-          } catch {}
+          } catch { }
 
           sessions.delete(sessionId);
           delete sessionUserMap[sessionId];
@@ -280,7 +280,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
           console.log("❌ Logged out → deleting session");
           try {
             fs.rmSync(sessionPath, { recursive: true, force: true });
-          } catch {}
+          } catch { }
 
           sessions.delete(sessionId);
           delete sessionUserMap[sessionId];
@@ -438,7 +438,7 @@ const logoutSession = async (req, res) => {
     const sessionPath = path.join(SESSIONS_PATH, sessionId);
     try {
       fs.rmSync(sessionPath, { recursive: true, force: true });
-    } catch (e) {}
+    } catch (e) { }
 
     // Notify frontend via Socket.io
     if (ioInstance) {
