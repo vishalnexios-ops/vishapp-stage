@@ -18,10 +18,31 @@ const port = process.env.PORT || 5000;
 
 // Middleware
 app.use(bodyParser.json());
-app.use(cors({
-    origin: "http://localhost:3000",
-    credentials: true,
-}));
+const allowedOrigins = [
+    "http://localhost:3000",
+    "https://vishapp-frontend.vercel.app",
+];
+
+app.use(
+    cors({
+        origin: function (origin, callback) {
+            // Allow requests with no origin (like mobile apps, curl, cronjobs)
+            if (!origin) return callback(null, true);
+
+            if (allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                callback(new Error("Not allowed by CORS"));
+            }
+        },
+        credentials: true,
+    })
+);
+
+// app.use(cors({
+//     origin: "http://localhost:3000",
+//     credentials: true,
+// }));
 app.use(express.static('public'));
 app.use(cookieParser());
 const server = http.createServer(app);
@@ -50,7 +71,7 @@ cron.schedule("* * * * *", async () => {
     await sendScheduleMessage();
 });
 
- // Socket.io connection
+// Socket.io connection
 io.on("connection", (socket) => {
     console.log("⚡ Frontend connected via Socket.io:", socket.id);
 
