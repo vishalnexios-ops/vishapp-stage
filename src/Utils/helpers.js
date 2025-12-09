@@ -7,11 +7,20 @@ const randomVariation = (text) => {
   return variations[Math.floor(Math.random() * variations.length)];
 };
 
-const toISTDate = (scheduledTime) => {
-  // From "2025-12-09T21:03:00" → "2025-12-09T21:03:00+05:30"
-  const iso = scheduledTime + "+05:30";
-  return new Date(iso);
-};
+function toISTDateSafe(scheduledTime) {
+    if (!scheduledTime) return null;
+
+    const iso = scheduledTime.endsWith("Z") || scheduledTime.includes("+")
+        ? scheduledTime
+        : scheduledTime + "+05:30";
+
+    const date = new Date(iso);
+
+    if (isNaN(date)) throw new Error("Invalid scheduledTime format");
+
+    return date;
+}
+
 
 const safeSendBulk = async (sock, numbers, message, allowedToSend) => {
   let sent = 0;
@@ -60,5 +69,5 @@ module.exports = {
   randomVariation,
   safeSendBulk,
   safeSend,
-  toISTDate,
+  toISTDateSafe,
 };

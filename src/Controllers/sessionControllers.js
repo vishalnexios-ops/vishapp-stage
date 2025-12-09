@@ -24,7 +24,7 @@ const {
   safeSendBulk,
   humanDelay,
   randomVariation,
-  toISTDate,
+  toISTDateSafe,
 } = require("../Utils/helpers");
 
 let ioInstance = null; // Socket.io instance
@@ -554,7 +554,7 @@ const sendToMultiple = async (req, res) => {
         contentType = "file";
       }
     }
-    const scheduledConvertedTime = toISTDate(scheduledTime);
+    const scheduledConvertedTime = toISTDateSafe(scheduledTime);
     console.log("scheduledConvertedTime---->", scheduledConvertedTime);
 
     // Schedule messages for each number
