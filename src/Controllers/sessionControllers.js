@@ -20,7 +20,12 @@ const messageModel = require("../Models/messageModel");
 const contactModel = require("../Models/contactModel");
 const templateModel = require("../Models/templateModel");
 const userModel = require("../Models/userModel");
-const { safeSendBulk, humanDelay, randomVariation } = require("../Utils/helpers");
+const {
+  safeSendBulk,
+  humanDelay,
+  randomVariation,
+  toISTDate,
+} = require("../Utils/helpers");
 
 let ioInstance = null; // Socket.io instance
 
@@ -549,7 +554,7 @@ const sendToMultiple = async (req, res) => {
         contentType = "file";
       }
     }
-    const scheduledConvertedTime = new Date(scheduledTime + " +05:30");
+    const scheduledConvertedTime = toISTDate(scheduledTime);
     console.log("scheduledConvertedTime---->", scheduledConvertedTime);
 
     // Schedule messages for each number
