@@ -1,5 +1,5 @@
 const humanDelay = () => {
-      return 2500 + Math.floor(Math.random() * 2500); // 2.5s to 5s
+      return 10000 + Math.floor(Math.random() * 5000); // 10s to 15s
 }
 
 
@@ -23,7 +23,7 @@ const safeSendBulk = async (sock, numbers, message, allowedToSend) => {
                   : `${num}@s.whatsapp.net`;
 
             try {
-                  // Random variation (optional)
+                  
                   const finalMessage = randomVariation(message);
 
                   // Send

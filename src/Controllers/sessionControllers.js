@@ -632,16 +632,6 @@ const sendToMultiple = async (req, res) => {
     let successCount = await safeSendBulk(sock, toNumbers, message, allowedToSend);
     for (let i = 0; i < allowedToSend; i++) {
       try {
-        // if (mediaUrl) {
-        //   const isImage = /\.(jpg|jpeg|png|gif)$/i.test(mediaUrl);
-        //   await sock.sendMessage(to, {
-        //     [isImage ? "image" : "video"]: { url: mediaUrl },
-        //     caption: caption || message || (isImage ? "Image" : "Video"),
-        //   });
-        // } else if (message) {
-        //   await sock.sendMessage(to, { text: message });
-        // }
-
         // Save message to database immediately after successful send
         const newMessage = new messageModel({
           sender: userId,
@@ -656,9 +646,8 @@ const sendToMultiple = async (req, res) => {
           direction: "outgoing",
         });
         await newMessage.save();
-        await new Promise((resolve) => setTimeout(resolve, delayTime));
       } catch (err) {
-        console.error(`Failed to send to ${number}:`, err.message);
+        console.error(`Failed to send to ${toNumbers[i]}:`, err.message);
       }
     }
     return sendResponse(
