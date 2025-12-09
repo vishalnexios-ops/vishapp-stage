@@ -20,7 +20,7 @@ const messageModel = require("../Models/messageModel");
 const contactModel = require("../Models/contactModel");
 const templateModel = require("../Models/templateModel");
 const userModel = require("../Models/userModel");
-const { safeSendBulk, humanDelay } = require("../Utils/helpers");
+const { safeSendBulk, humanDelay, randomVariation } = require("../Utils/helpers");
 
 let ioInstance = null; // Socket.io instance
 
@@ -44,7 +44,8 @@ try {
 } catch (e) {
   sessionUserMap = {};
 }
-const saveSessionUserMap = () => fs.writeFileSync(SESSION_USER_FILE, JSON.stringify(sessionUserMap, null, 2));
+const saveSessionUserMap = () =>
+  fs.writeFileSync(SESSION_USER_FILE, JSON.stringify(sessionUserMap, null, 2));
 
 const initSocket = (io) => {
   ioInstance = io;
@@ -70,7 +71,9 @@ async function restoreSessions() {
         console.log(`Removing invalid session: ${dir}`);
 
         // Delete session folder
-        try { fs.rmSync(full, { recursive: true, force: true }); } catch { }
+        try {
+          fs.rmSync(full, { recursive: true, force: true });
+        } catch {}
 
         // Remove from memory map
         delete sessionUserMap[dir];
@@ -87,7 +90,9 @@ async function restoreSessions() {
       console.error("Restore failed:", dir, err.message);
 
       console.log(`Cleaning broken session folder: ${dir}`);
-      try { fs.rmSync(full, { recursive: true, force: true }); } catch { }
+      try {
+        fs.rmSync(full, { recursive: true, force: true });
+      } catch {}
 
       delete sessionUserMap[dir];
       saveSessionUserMap();
@@ -96,7 +101,6 @@ async function restoreSessions() {
     }
   }
 }
-
 
 // Start a WhatsApp session
 async function startSession(sessionId, res = null, restoredUserId = null) {
@@ -108,7 +112,6 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
   // sessionLoading.add(sessionId);
 
   const sessionPath = path.join(SESSIONS_PATH, sessionId);
-
 
   try {
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
@@ -180,7 +183,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
       // Connected
       if (connection === "open") {
-        console.log(`[${sessionId}] Connected`)
+        console.log(`[${sessionId}] Connected`);
         // if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath);
 
         // GET MOBILE NUMBER FROM WHATSAPP
@@ -206,7 +209,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
           // Close new session
           try {
             await sock.logout();
-          } catch { }
+          } catch {}
 
           sessions.delete(sessionId);
           delete sessionUserMap[sessionId];
@@ -240,7 +243,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
         if (uid) {
           sessionUserMap[sessionId] = uid;
-          saveSessionUserMap();;
+          saveSessionUserMap();
           sessions.set(sessionId, sock);
         }
 
@@ -281,7 +284,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
           console.log("Logged out → deleting session");
           try {
             fs.rmSync(sessionPath, { recursive: true, force: true });
-          } catch { }
+          } catch {}
 
           sessions.delete(sessionId);
           delete sessionUserMap[sessionId];
@@ -439,7 +442,7 @@ const logoutSession = async (req, res) => {
     const sessionPath = path.join(SESSIONS_PATH, sessionId);
     try {
       fs.rmSync(sessionPath, { recursive: true, force: true });
-    } catch (e) { }
+    } catch (e) {}
 
     // Notify frontend via Socket.io
     if (ioInstance) {
@@ -546,8 +549,9 @@ const sendToMultiple = async (req, res) => {
         contentType = "file";
       }
     }
-    const scheduledConvertedTime = new Date(scheduledTime);
+    const scheduledConvertedTime = new Date(scheduledTime + " +05:30");
     console.log("scheduledConvertedTime---->", scheduledConvertedTime);
+
     // Schedule messages for each number
     try {
       for (let i = 0; i < toNumbers.length; i++) {
@@ -629,7 +633,12 @@ const sendToMultiple = async (req, res) => {
       DAILY_LIMIT - messagesSentToday
     );
 
-    let successCount = await safeSendBulk(sock, toNumbers, message, allowedToSend);
+    let successCount = await safeSendBulk(
+      sock,
+      toNumbers,
+      message,
+      allowedToSend
+    );
     for (let i = 0; i < allowedToSend; i++) {
       try {
         // Save message to database immediately after successful send
@@ -823,7 +832,10 @@ const sendScheduleMessage = async () => {
       const ok = await safeSend(sock, jid, messagePayload);
 
       if (!ok) {
-        console.error("Failed to send scheduled message to", msg.receiverMobile);
+        console.error(
+          "Failed to send scheduled message to",
+          msg.receiverMobile
+        );
 
         await messageModel.findByIdAndUpdate(msg._id, {
           schedulled: false,
