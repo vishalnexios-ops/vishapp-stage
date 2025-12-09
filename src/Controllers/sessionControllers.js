@@ -25,6 +25,7 @@ const {
   humanDelay,
   randomVariation,
   toISTDateSafe,
+  safeSend,
 } = require("../Utils/helpers");
 
 let ioInstance = null; // Socket.io instance
