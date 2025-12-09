@@ -20,7 +20,7 @@ const port = process.env.PORT || 5000;
 app.use(bodyParser.json());
 const allowedOrigins = [
     "http://localhost:3000",
-    "https://vishapp-frontend.vercel.app",
+    "https://vishapp.vercel.app"
 ];
 
 app.use(
