@@ -73,7 +73,7 @@ cron.schedule("* * * * *", async () => {
 
 // Socket.io connection
 io.on("connection", (socket) => {
-    console.log("⚡ Frontend connected via Socket.io:", socket.id);
+    console.log("Frontend connected via Socket.io:", socket.id);
 
     socket.on("disconnect", () => {
         console.log("Frontend disconnected:", socket.id);

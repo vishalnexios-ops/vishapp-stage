@@ -20,6 +20,7 @@ const messageModel = require("../Models/messageModel");
 const contactModel = require("../Models/contactModel");
 const templateModel = require("../Models/templateModel");
 const userModel = require("../Models/userModel");
+const { safeSendBulk } = require("../Utils/helpers");
 
 let ioInstance = null; // Socket.io instance
 
@@ -57,7 +58,7 @@ async function restoreSessions() {
     const full = path.join(SESSIONS_PATH, dir);
     if (!fs.statSync(full).isDirectory()) continue;
 
-    console.log("♻ Restoring session:", dir);
+    console.log("Restoring session:", dir);
 
     const mappedUserId = sessionUserMap[dir] || null;
 
@@ -66,7 +67,7 @@ async function restoreSessions() {
 
       // ⛔ If session did NOT restore correctly
       if (!sock || !sock.user || !sock.user.id) {
-        console.log(`🗑 Removing invalid session: ${dir}`);
+        console.log(`Removing invalid session: ${dir}`);
 
         // Delete session folder
         try { fs.rmSync(full, { recursive: true, force: true }); } catch { }
@@ -81,11 +82,11 @@ async function restoreSessions() {
         continue;
       }
 
-      console.log(`✅ Session restored successfully: ${dir}`);
+      console.log(`Session restored successfully: ${dir}`);
     } catch (err) {
-      console.error("❌ Restore failed:", dir, err.message);
+      console.error("Restore failed:", dir, err.message);
 
-      console.log(`🗑 Cleaning broken session folder: ${dir}`);
+      console.log(`Cleaning broken session folder: ${dir}`);
       try { fs.rmSync(full, { recursive: true, force: true }); } catch { }
 
       delete sessionUserMap[dir];
@@ -128,12 +129,12 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
     sock._presenceInterval = null;
 
-    // 🧿 Safe save creds
+    // Safe save creds
     sock.ev.on("creds.update", async () => {
       try {
         await saveCreds();
       } catch (err) {
-        console.error("❌ Error saving creds:", err);
+        console.error("Error saving creds:", err);
       }
     });
 
@@ -142,11 +143,11 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
     sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
-      // 📌 Show QR
+      // Show QR
       if (qr && !qrSent && res) {
         qrSent = true;
         const qrGeneratedAt = new Date();
-        console.log(`📱 [${sessionId}] Scan this QR below 👇`);
+        console.log(`[${sessionId}] Scan this QR below`);
         qrcodeTerminal.generate(qr, { small: true });
 
         const qrImageUrl = await qrcode.toDataURL(qr);
@@ -164,7 +165,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
                 </style>
               </head>
               <body>
-                <h2>📲 Scan this QR to link WhatsApp</h2>
+                <h2>Scan this QR to link WhatsApp</h2>
                 <img src="${qrImageUrl}" alt="WhatsApp QR" />
                 <p>Session ID: <b>${sessionId}</b></p>
                 <p>QR Generated At: <b>${qrGeneratedAt.toLocaleTimeString()}</b></p>
@@ -177,15 +178,15 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
         }
       }
 
-      // 🟢 Connected
+      // Connected
       if (connection === "open") {
-        console.log(`🟢 [${sessionId}] Connected`)
+        console.log(`[${sessionId}] Connected`)
         // if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath);
 
         // GET MOBILE NUMBER FROM WHATSAPP
         const loggedInMobile = sock.user.id.split(":")[0]; // ex: 919876543210
 
-        // 🚫 CHECK IF THIS NUMBER IS ALREADY LOGGED IN ANOTHER SESSION
+        // CHECK IF THIS NUMBER IS ALREADY LOGGED IN ANOTHER SESSION
         let alreadySession = null;
         for (const [sid, s] of sessions.entries()) {
           if (sid === sessionId) continue;
@@ -198,7 +199,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
         if (alreadySession) {
           console.log(
-            `❌ SAME NUMBER ALREADY LOGGED IN (${loggedInMobile}) in session:`,
+            `SAME NUMBER ALREADY LOGGED IN (${loggedInMobile}) in session:`,
             alreadySession
           );
 
@@ -239,8 +240,8 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
         if (uid) {
           sessionUserMap[sessionId] = uid;
-          saveSessionUserMap();          ;
-        sessions.set(sessionId, sock);
+          saveSessionUserMap();;
+          sessions.set(sessionId, sock);
         }
 
         // Mark in DB
@@ -267,17 +268,17 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
       if (connection === "close") {
         const status = lastDisconnect?.error?.output?.statusCode;
 
-        console.log(`⚠️ [${sessionId}] Disconnected:`, status);
+        console.log(`[${sessionId}] Disconnected:`, status);
 
-        // 🌟 stop presence interval
+        // stop presence interval
         if (sock._presenceInterval) {
           clearInterval(sock._presenceInterval);
           sock._presenceInterval = null;
         }
 
-        // ❗ LOGGED OUT ONLY HERE
+        // LOGGED OUT ONLY HERE
         if (status === DisconnectReason.loggedOut) {
-          console.log("❌ Logged out → deleting session");
+          console.log("Logged out → deleting session");
           try {
             fs.rmSync(sessionPath, { recursive: true, force: true });
           } catch { }
@@ -309,7 +310,7 @@ async function startSession(sessionId, res = null, restoredUserId = null) {
 
     return sock;
   } catch (err) {
-    console.error("❌ Error starting session:", err);
+    console.error("Error starting session:", err);
   } finally {
     sessionLoading.delete(sessionId);
   }
@@ -326,7 +327,7 @@ const createSession = async (req, res) => {
   try {
     await startSession(sessionId, res, userId);
   } catch (err) {
-    console.error("❌ Error creating session:", err);
+    console.error("Error creating session:", err);
     return sendError(res, 500, err.message);
   }
 };
@@ -388,12 +389,12 @@ const sendMediaUrl = async (req, res) => {
 
     await sock.sendMessage(jid, {
       [isImage ? "image" : "video"]: { url: mediaUrl },
-      caption: caption || (isImage ? "📸 Image" : "🎥 Video"),
+      caption: caption || (isImage ? "Image" : "Video"),
     });
 
     sendResponse(res, 200, ` ${isImage ? "Image" : "Video"} sent successfully`);
   } catch (err) {
-    console.error("❌ Error sending media:", err);
+    console.error("Error sending media:", err);
     sendError(res, 500, err.message);
   }
 };
@@ -451,7 +452,7 @@ const logoutSession = async (req, res) => {
       ` Session '${sessionId}' logged out successfully.`
     );
   } catch (err) {
-    console.error(`❌ Error logging out session ${sessionId}:`, err);
+    console.error(`Error logging out session ${sessionId}:`, err);
     return sendError(res, 500, err.message);
   }
 };
@@ -469,7 +470,7 @@ const getMessageById = async (req, res) => {
       data: message,
     });
   } catch (err) {
-    console.error("❌ Error fetching message by ID:", err);
+    console.error("Error fetching message by ID:", err);
     return sendError(res, 400, "Error fetching message by ID", err);
   }
 };
@@ -494,7 +495,7 @@ const getAllMessages = async (req, res) => {
       data: messages,
     });
   } catch (err) {
-    console.error("❌ Error fetching all messages:", err);
+    console.error("Error fetching all messages:", err);
     return sendError(res, 400, "Error fetching all messages", err);
   }
 };
@@ -528,7 +529,7 @@ const sendToMultiple = async (req, res) => {
     // Get current user mobile for DB save
     const userMobile = sock.user?.id.split(":")[0] || "";
 
-    // 🔍 Detect contentType automatically from mediaUrl
+    // Detect contentType automatically from mediaUrl
     let contentType = "text";
     if (mediaUrl) {
       // Extract MIME type using extension
@@ -573,7 +574,7 @@ const sendToMultiple = async (req, res) => {
         `Message scheduled successfully for ${toNumbers} number(s).`
       );
     } catch (err) {
-      console.error("❌ Error scheduling message(s):", err);
+      console.error("Error scheduling message(s):", err);
       return sendError(res, 500, "Error scheduling messages", err);
     }
   } else {
@@ -582,7 +583,7 @@ const sendToMultiple = async (req, res) => {
     // Get current user mobile for DB save
     const userMobile = sock.user?.id.split(":")[0] || "";
 
-    // 🔍 Detect contentType automatically from mediaUrl
+    // Detect contentType automatically from mediaUrl
     let contentType = "text";
     if (mediaUrl) {
       // Extract MIME type using extension
@@ -628,29 +629,24 @@ const sendToMultiple = async (req, res) => {
       DAILY_LIMIT - messagesSentToday
     );
 
-    let successCount = 0;
+    let successCount = await safeSendBulk(sock, toNumbers, message, allowedToSend);
     for (let i = 0; i < allowedToSend; i++) {
-      const number = toNumbers[i];
-      const receiverMobile = number;
-      const to = number.includes("@s.whatsapp.net")
-        ? number
-        : `${number}@s.whatsapp.net`;
       try {
-        if (mediaUrl) {
-          const isImage = /\.(jpg|jpeg|png|gif)$/i.test(mediaUrl);
-          await sock.sendMessage(to, {
-            [isImage ? "image" : "video"]: { url: mediaUrl },
-            caption: caption || message || (isImage ? "📸 Image" : "🎥 Video"),
-          });
-        } else if (message) {
-          await sock.sendMessage(to, { text: message });
-        }
+        // if (mediaUrl) {
+        //   const isImage = /\.(jpg|jpeg|png|gif)$/i.test(mediaUrl);
+        //   await sock.sendMessage(to, {
+        //     [isImage ? "image" : "video"]: { url: mediaUrl },
+        //     caption: caption || message || (isImage ? "Image" : "Video"),
+        //   });
+        // } else if (message) {
+        //   await sock.sendMessage(to, { text: message });
+        // }
 
         // Save message to database immediately after successful send
         const newMessage = new messageModel({
           sender: userId,
           senderMobile: userMobile,
-          receiverMobile: receiverMobile,
+          receiverMobile: toNumbers[i],
           content: caption || message || "",
           contentType,
           mediaUrl,
@@ -660,12 +656,9 @@ const sendToMultiple = async (req, res) => {
           direction: "outgoing",
         });
         await newMessage.save();
-
-        successCount++;
-        console.log(`Sent to ${number}`);
         await new Promise((resolve) => setTimeout(resolve, delayTime));
       } catch (err) {
-        console.error(`❌ Failed to send to ${number}:`, err.message);
+        console.error(`Failed to send to ${number}:`, err.message);
       }
     }
     return sendResponse(
@@ -695,7 +688,7 @@ const scheduleMessage = async (req, res) => {
   const userMobile = sock.user.id.split(":")[0];
 
   try {
-    // 🔍 Detect contentType automatically from mediaUrl
+    // Detect contentType automatically from mediaUrl
     let contentType = "text";
     if (mediaUrl) {
       // Extract MIME type using extension
@@ -755,7 +748,7 @@ const sendScheduleMessage = async () => {
     // const nowIST = new Date(Date.now() + (5.5 * 60 * 60 * 1000));
     const nowIST = new Date();
     console.log("nowIST---->", nowIST);
-    // 🔍 Get all scheduled messages whose time has arrived
+    // Get all scheduled messages whose time has arrived
     const scheduleMessages = await messageModel.find({
       schedulled: true,
       scheduledTime: { $lte: nowIST },
@@ -795,7 +788,7 @@ const sendScheduleMessage = async () => {
         msg.contentType === "document" ||
         /\.(pdf|docx?|xlsx?)$/i.test(msg.mediaUrl);
 
-      // 📨 Prepare message payload dynamically
+      // Prepare message payload dynamically
       let messagePayload = {};
       if (msg.mediaUrl) {
         if (isImage) messagePayload.image = { url: msg.mediaUrl };
@@ -812,11 +805,11 @@ const sendScheduleMessage = async () => {
 
       if (msg.caption) messagePayload.caption = msg.caption;
 
-      // 🔹 Send message via WhatsApp socket
+      // Send message via WhatsApp socket
       await sock.sendMessage(jid, messagePayload);
 
       console.log("Updating ID:", msg._id);
-      // 🔹 Update DB after success
+      // Update DB after success
       await messageModel.findByIdAndUpdate(msg._id, {
         schedulled: false,
         scheduledStatus: "scheduledSent",
@@ -837,16 +830,16 @@ const getSentMessage = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // 👇 Get status from query (optional)
+    // Get status from query (optional)
     const status = req.query.status;
 
-    // 👇 Base query
+    // Base query
     const query = {
       schedulled: false,
       sender: req.user.userId,
     };
 
-    // 👇 Apply filters
+    // Apply filters
     if (status === "sent") {
       query.$or = [
         { scheduledStatus: "sent" },
@@ -887,7 +880,7 @@ const getSentMessage = async (req, res) => {
       data: sentMessages,
     });
   } catch (err) {
-    console.error("❌ Error fetching sent messages:", err);
+    console.error("Error fetching sent messages:", err);
     return sendError(res, 500, "Error fetching sent messages", err);
   }
 };
@@ -955,7 +948,7 @@ const getUserData = async (req, res) => {
   }
 };
 
-// 🟢 Export all functions
+// Export all functions
 module.exports = {
   createSession,
   sendMessage,
@@ -974,5 +967,5 @@ module.exports = {
   getUserData,
 };
 
-// 🚀 Restore all sessions automatically at startup
+// Restore all sessions automatically at startup
 restoreSessions();
