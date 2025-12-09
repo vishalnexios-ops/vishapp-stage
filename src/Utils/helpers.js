@@ -23,7 +23,7 @@ const safeSendBulk = async (sock, numbers, message, allowedToSend) => {
                   : `${num}@s.whatsapp.net`;
 
             try {
-                  
+
                   const finalMessage = randomVariation(message);
 
                   // Send
@@ -43,9 +43,30 @@ const safeSendBulk = async (sock, numbers, message, allowedToSend) => {
 }
 
 
+// Retry system
+async function safeSend(sock, jid, payload) {
+      let retries = 2;
+
+      while (retries--) {
+            try {
+                  await sock.sendMessage(jid, payload);
+                  return true; // success
+            } catch (err) {
+                  console.error(`Retry failed. Attempts left ${retries}`, err.message);
+                  await new Promise((res) => setTimeout(res, humanDelay()));
+            }
+      }
+
+      return false; // failed after retries
+}
+
+
+
+
 
 module.exports = {
       humanDelay,
       randomVariation,
-      safeSendBulk
+      safeSendBulk,
+      safeSend
 };

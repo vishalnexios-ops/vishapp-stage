@@ -20,7 +20,7 @@ const messageModel = require("../Models/messageModel");
 const contactModel = require("../Models/contactModel");
 const templateModel = require("../Models/templateModel");
 const userModel = require("../Models/userModel");
-const { safeSendBulk } = require("../Utils/helpers");
+const { safeSendBulk, humanDelay } = require("../Utils/helpers");
 
 let ioInstance = null; // Socket.io instance
 
@@ -734,10 +734,9 @@ const getScheduleMessage = async (req, res) => {
 
 const sendScheduleMessage = async () => {
   try {
-    // const nowIST = new Date(Date.now() + (5.5 * 60 * 60 * 1000));
     const nowIST = new Date();
     console.log("nowIST---->", nowIST);
-    // Get all scheduled messages whose time has arrived
+
     const scheduleMessages = await messageModel.find({
       schedulled: true,
       scheduledTime: { $lte: nowIST },
@@ -749,65 +748,105 @@ const sendScheduleMessage = async () => {
     }
 
     for (const msg of scheduleMessages) {
-      const sock = sessions.get(msg.sessionId);
+      const senderMobile = msg.senderMobile;
 
-      if (!sock) {
-        console.error(`Socket not found for session ${msg.sessionId}`);
+      // ⭐ FIND SESSION BY SENDER MOBILE
+      let sessionId = null;
+
+      for (const [sid, s] of sessions.entries()) {
+        const mobile = s?.user?.id?.split(":")[0];
+        if (mobile && mobile === senderMobile) {
+          sessionId = sid;
+          break;
+        }
+      }
+
+      if (!sessionId) {
+        console.error("No session found for mobile:", senderMobile);
+
         await messageModel.findByIdAndUpdate(msg._id, {
-          scheduledStatus: "failed",
           schedulled: false,
+          scheduledStatus: "failed",
         });
+
         continue;
       }
 
+      const sock = sessions.get(sessionId);
+
+      if (!sock) {
+        console.error(`Socket not found for session ${sessionId}`);
+
+        await messageModel.findByIdAndUpdate(msg._id, {
+          schedulled: false,
+          scheduledStatus: "failed",
+        });
+
+        continue;
+      }
+
+      // ⭐ TARGET JID
       const jid = msg.receiverMobile.includes("@s.whatsapp.net")
         ? msg.receiverMobile
         : `${msg.receiverMobile}@s.whatsapp.net`;
 
-      // Detect media type safely
+      // ⭐ MEDIA DETECTION
+      const url = msg.mediaUrl || "";
       const isImage =
-        msg.contentType === "image" ||
-        /\.(jpg|jpeg|png|gif)$/i.test(msg.mediaUrl);
+        msg.contentType === "image" || /\.(jpg|jpeg|png|gif)$/i.test(url);
       const isVideo =
-        msg.contentType === "video" ||
-        /\.(mp4|mov|avi|mkv)$/i.test(msg.mediaUrl);
+        msg.contentType === "video" || /\.(mp4|mov|avi|mkv)$/i.test(url);
       const isAudio =
-        msg.contentType === "audio" || /\.(mp3|ogg|wav)$/i.test(msg.mediaUrl);
+        msg.contentType === "audio" || /\.(mp3|ogg|wav)$/i.test(url);
       const isDocument =
-        msg.contentType === "document" ||
-        /\.(pdf|docx?|xlsx?)$/i.test(msg.mediaUrl);
+        msg.contentType === "document" || /\.(pdf|docx?|xlsx?)$/i.test(url);
 
-      // Prepare message payload dynamically
+      // ⭐ PAYLOAD
       let messagePayload = {};
-      if (msg.mediaUrl) {
-        if (isImage) messagePayload.image = { url: msg.mediaUrl };
-        else if (isVideo) messagePayload.video = { url: msg.mediaUrl };
-        else if (isAudio) messagePayload.audio = { url: msg.mediaUrl };
+
+      if (url) {
+        if (isImage) messagePayload.image = { url };
+        else if (isVideo) messagePayload.video = { url };
+        else if (isAudio) messagePayload.audio = { url };
         else if (isDocument)
           messagePayload.document = {
-            url: msg.mediaUrl,
+            url,
             mimetype: "application/pdf",
           };
       } else {
-        messagePayload.text = msg.content || "";
+        messagePayload.text = randomVariation(msg.content || "");
       }
 
-      if (msg.caption) messagePayload.caption = msg.caption;
+      if (msg.caption) messagePayload.caption = randomVariation(msg.caption);
 
-      // Send message via WhatsApp socket
-      await sock.sendMessage(jid, messagePayload);
+      // SAFE SEND
+      const ok = await safeSend(sock, jid, messagePayload);
 
-      console.log("Updating ID:", msg._id);
-      // Update DB after success
+      if (!ok) {
+        console.error("Failed to send scheduled message to", msg.receiverMobile);
+
+        await messageModel.findByIdAndUpdate(msg._id, {
+          schedulled: false,
+          scheduledStatus: "failed",
+        });
+
+        continue;
+      }
+
+      // DB UPDATE ON SUCCESS
       await messageModel.findByIdAndUpdate(msg._id, {
         schedulled: false,
         scheduledStatus: "scheduledSent",
         sentAt: new Date(),
       });
 
-      console.log(` Message sent to ${msg.receiverMobile}`);
+      console.log(`✅ Message sent to ${msg.receiverMobile}`);
+
+      // HUMAN DELAY BEFORE NEXT MESSAGE
+      await new Promise((res) => setTimeout(res, humanDelay()));
     }
-    console.error(`Cron run successfully...`);
+
+    console.log("Cron run successfully...");
   } catch (error) {
     console.error(`Error in scheduling message:`, error.message);
   }
